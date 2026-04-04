@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: courant-profit-tracker
+    runtime: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm run db:migrate && npm run start
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: 24.14.1
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: DATABASE_URL
+        value: file:/opt/render/project/src/data/courant.db
+    disk:
+      name: courant-data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
