@@ -1,0 +1,13 @@
+.git
+.next
+node_modules
+coverage
+.npm-cache
+.appdata
+.localappdata
+.env
+.env.local
+.env.test
+bootstrap-app
+Transactions - Courant debit.csv
+Transactions - Courant credit.csv

@@ -3,9 +3,9 @@ services:
     name: courant-profit-tracker
     runtime: node
     plan: starter
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci && npm run build
     startCommand: npm run db:migrate && npm run start
-    healthCheckPath: /login
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_VERSION
         value: 24.14.1
