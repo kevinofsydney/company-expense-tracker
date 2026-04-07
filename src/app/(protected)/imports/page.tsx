@@ -1,4 +1,5 @@
 import { ImportForm } from "@/components/import-form";
+import { UndoImportButton } from "@/components/undo-import-button";
 import { compactNumber, formatDateLabel } from "@/lib/format";
 import { listImports } from "@/lib/services/imports";
 
@@ -29,6 +30,7 @@ export default async function ImportsPage() {
                 <th>Duplicates</th>
                 <th>Skipped</th>
                 <th>Suggested</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -42,6 +44,9 @@ export default async function ImportsPage() {
                   <td>{compactNumber(item.duplicateRows)}</td>
                   <td>{compactNumber(item.skippedRows)}</td>
                   <td>{compactNumber(item.suggestedExclusionRows)}</td>
+                  <td>
+                    <UndoImportButton id={item.id} addedRows={item.addedRows} />
+                  </td>
                 </tr>
               ))}
             </tbody>

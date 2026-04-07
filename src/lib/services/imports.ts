@@ -1,7 +1,7 @@
 import { and, between, desc, eq, inArray, or } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { ensureDb } from "@/lib/db";
-import { imports, transactions } from "@/lib/schema";
+import { auditLog, imports, transactions } from "@/lib/schema";
 import { parseNabCsv, type NormalizedTransactionCandidate } from "@/lib/domain/nab";
 import {
   getDirectTransferSuggestion,
@@ -192,6 +192,23 @@ export async function listImports() {
   return db.query.imports.findMany({
     orderBy: [desc(imports.uploadedAt)],
   });
+}
+
+export async function deleteImport(id: string) {
+  const db = await ensureDb();
+
+  const importTxns = await db
+    .select({ id: transactions.id })
+    .from(transactions)
+    .where(eq(transactions.importId, id));
+
+  if (importTxns.length > 0) {
+    const txnIds = importTxns.map((t) => t.id);
+    await db.delete(auditLog).where(inArray(auditLog.transactionId, txnIds));
+    await db.delete(transactions).where(eq(transactions.importId, id));
+  }
+
+  await db.delete(imports).where(eq(imports.id, id));
 }
 
 export async function getImportById(id: string) {
