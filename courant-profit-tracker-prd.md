@@ -258,6 +258,22 @@ A transaction should be marked `SUGGESTED_EXCLUSION` when one or more of the fol
   - dates within 0 to 3 days
   - transfer-like text on one or both rows
 
+### Transfer pattern matching
+Pattern matching applies across all four text fields: `transaction_type`, `transaction_details`, `merchant_name`, and `nab_category`. The full set of recognized transfer patterns is:
+
+| Pattern | Notes |
+|---|---|
+| `Linked Acc Trns` | Explicit linked-account transfer |
+| `CC payment` | Credit-card payment shorthand |
+| `Credit Card Payment` | Full credit-card payment text |
+| `Internet Payment` | Online account transfer |
+| `Internal Transfer` | Generic internal movement |
+| `Payment Reversal` | Reversed payment |
+| `Top Up` | Account top-up deposit |
+| `Wage Correction` | Payroll correction entry |
+
+All patterns are matched case-insensitively.
+
 ### Important rule
 Suggested exclusions remain visible until Kevin confirms or changes them.
 
@@ -315,13 +331,16 @@ Kevin must be able to:
 - `David Balance = (Net Profit × 0.40) - David personal expenses`
 - `Wenona Balance = (Net Profit × 0.20) - Wenona personal expenses - 50% of Kevin+Wenona expenses`
 
-### Provisional totals rule
-If any of the following exist:
-- unreviewed transactions
-- suggested exclusions not yet confirmed
-- positive transactions not yet resolved
+### Rounding
+All profit-share division uses half-round-up rounding (round half away from zero). This avoids systematic cent bias when dividing odd amounts.
 
-then the dashboard must clearly show:
+### Provisional totals rule
+A transaction is considered pending review if any of the following are true:
+- its review status is `UNREVIEWED`
+- its review status is `SUGGESTED_EXCLUSION`
+- its amount is positive and classification is null
+
+If any pending review transactions exist, the dashboard must clearly show:
 - `Provisional totals`
 - count of items pending review
 
@@ -403,6 +422,14 @@ If implemented, Kevin should be able to:
 - review suggestions before final application
 
 The system must not silently apply destructive rules without review in V1.
+
+## 11.10 Session and authentication details
+
+The session cookie is named `courant_profit_tracker_session`.
+
+Session TTL is 30 days (2,592,000 seconds). The session is httpOnly and signed using `SESSION_SECRET`.
+
+The app respects a `PORT` environment variable in production startup. If unset it defaults to 3000.
 
 ## 12. Non-functional requirements
 
@@ -498,15 +525,19 @@ This is not a hard contract, but the implementation should expose endpoints equi
 - `GET /api/imports/:id`
 
 ### Transactions
-- `GET /api/transactions`
-- `PATCH /api/transactions/:id`
-- `POST /api/transactions/bulk-update`
-- `GET /api/transactions/:id/audit`
+- `GET /api/transactions` — paginated list with filters
+- `GET /api/transactions/:id` — single transaction detail
+- `PATCH /api/transactions/:id` — update classification or exclusion status
+- `POST /api/transactions/bulk-update` — bulk classify, confirm exclusions, or reopen
+- `GET /api/transactions/:id/audit` — audit log entries for one transaction
 
 ### Dashboard
 - `GET /api/dashboard`
 
-### Export
+### Health
+- `GET /api/health` — liveness check for deployment health monitors
+
+### Export (P1 — not yet implemented)
 - `GET /api/export.csv`
 
 ## 15. UX requirements
@@ -670,3 +701,57 @@ This section records meaningful architectural or structural changes made after t
 **Before:** The `ids` array in bulk update requests validated only that each element was a non-empty string (`z.string().min(1)`). Any non-empty string would pass validation.
 
 **After:** Each ID must be a valid UUID (`z.string().uuid()`), matching the actual format used for transaction IDs. Malformed IDs are now rejected with a 400 before reaching the database.
+
+---
+
+## 21. Recommended improvements and future features
+
+This section records potential enhancements considered after V1. Items are not committed to any release.
+
+### 21.1 CSV export (P1 — already in scope, not yet built)
+
+The API surface includes `GET /api/export.csv` as a P1 item but it is not yet implemented. A working export would let Kevin pull classified data into Excel or accounting software without manual copy-paste.
+
+Suggested output columns: date, processed_on, amount_dollars, account_type, transaction_type, transaction_details, merchant_name, classification, review_status, exclusion_reason, import_id, created_at.
+
+### 21.2 Keyword-based auto-suggestion rules (P1 — already in scope)
+
+Section 11.9 defines this feature. Kevin defines keyword → classification mappings. On import, matching rows receive a suggested classification instead of landing as bare `UNREVIEWED`. Kevin still confirms each suggestion before it is finalized.
+
+This would meaningfully reduce the review queue for recurring vendors (e.g., always classify "Officeworks" as BUSINESS).
+
+### 21.3 Read-only partner dashboard
+
+A second password (or separate URL token) that grants a read-only view of the dashboard — showing income, expenses, net profit, and individual balance — without any classification or import capabilities. Useful so David or Wenona can check their balance without needing Kevin to relay figures.
+
+### 21.4 Per-import undo
+
+Allow Kevin to soft-delete all transactions from a specific import run if the wrong file was uploaded. Transactions would be marked as voided rather than hard-deleted, preserving the audit trail. Currently the only recovery option is manual reclassification of each row.
+
+### 21.5 Date-range scoping on the dashboard
+
+Add a date-range selector to the dashboard so Kevin can see profit figures for a specific financial period (e.g., FY25 Q3) rather than all-time totals. All calculations would still use the same formulas, filtered to the selected date range.
+
+### 21.6 Recurring-transaction detection
+
+After a few months of data, the same merchant often appears repeatedly with the same classification. The system could detect recurring rows (same merchant, similar amount, monthly cadence) and pre-populate a suggested classification, reducing manual review for known recurring expenses.
+
+### 21.7 Exclusion reason auto-fill
+
+When a suggested exclusion is confirmed, auto-populate the exclusion reason from the matched transfer pattern (e.g., "Linked account transfer" or "Credit-card payment") so Kevin does not need to type it manually. Kevin could still override the reason.
+
+### 21.8 Import history comparison
+
+On the imports list page, show a diff between two import runs — which rows were added, which were already present, and whether any previously classified transactions were affected by overlapping files. This would make it easier to audit what changed after uploading an updated bank statement.
+
+### 21.9 Configurable profit-share percentages
+
+Currently Kevin (40%), David (40%), and Wenona (20%) are hardcoded in the calculation module. If the share agreement ever changes, a code edit is required. Storing these percentages in a configuration table (with a history of past values) would allow adjustments without a deployment, and would make historical calculations correct if percentages changed mid-year.
+
+### 21.10 Stale session warning
+
+If Kevin leaves the tab open and the session expires, the next action silently redirects to `/login`. A client-side idle timer that warns before expiry (and offers to extend the session) would prevent losing partially entered data.
+
+### 21.11 Stronger authentication option
+
+The current single shared password has no per-device revocation. An alternative would be a TOTP-based login (e.g., Google Authenticator) or passkey, which would make it harder for a leaked password to grant persistent access.
