@@ -24,18 +24,18 @@ export const transactionPatchSchema = z.union([
 export const bulkUpdateSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("classify"),
-    ids: z.array(z.string().min(1)).min(1),
+    ids: z.array(z.string().uuid()).min(1),
     classification: classificationSchema,
     exclusionReason: z.string().trim().max(240).nullable().optional(),
   }),
   z.object({
     action: z.literal("confirm-exclusion"),
-    ids: z.array(z.string().min(1)).min(1),
+    ids: z.array(z.string().uuid()).min(1),
     exclusionReason: z.string().trim().max(240).nullable().optional(),
   }),
   z.object({
     action: z.literal("reopen"),
-    ids: z.array(z.string().min(1)).min(1),
+    ids: z.array(z.string().uuid()).min(1),
   }),
 ]);
 

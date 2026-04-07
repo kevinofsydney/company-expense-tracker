@@ -624,3 +624,49 @@ At minimum, include tests for:
 ## 19. Final product definition
 
 Build a private single-user web app for Courant Pty Ltd that imports NAB debit and credit-card CSV exports, deduplicates transactions, flags likely internal transfers, lets Kevin review and classify transactions, and calculates provisional and final profit allocations for Kevin, David, and Wenona using explicit, auditable rules.
+
+---
+
+## 20. Post-V1 implementation changes
+
+This section records meaningful architectural or structural changes made after the initial V1 build.
+
+### 20.1 Batched cross-account transfer lookup during import
+
+**File:** `src/lib/services/imports.ts` — `annotateSuggestions`
+
+**Before:** For each imported transaction candidate, a separate `findFirst` database query was issued to look for a matching cross-account transfer pair in the existing transactions table. This was an O(N) query pattern — one round-trip per candidate row.
+
+**After:** The function now issues a single query that fetches all existing transactions within the widest possible date window across all candidates, then matches in-memory. This reduces the import DB round-trips for the cross-account lookup to one regardless of batch size.
+
+### 20.2 Batched UPDATE in bulk transaction operations
+
+**File:** `src/lib/services/transactions.ts` — `bulkUpdateTransactions`
+
+**Before:** Each selected transaction was updated with its own individual `UPDATE` statement in a sequential loop — O(N) writes per bulk operation.
+
+**After:** Transactions are grouped by their resolved next state `(classification, reviewStatus, exclusionReason)`. One `UPDATE ... WHERE id IN (...)` is issued per distinct state group. This reduces writes to O(distinct states), which is typically one for operations like bulk-classify or bulk-reopen.
+
+### 20.3 Removed redundant import record re-fetch
+
+**File:** `src/lib/services/imports.ts` — `importTransactionsFromCsv`
+
+**Before:** After inserting the import record, the code immediately fetched it back with a `findFirst` query and threw if the record was null (which can never happen if the insert succeeded without throwing).
+
+**After:** The import record object is constructed before the insert and returned directly, eliminating an unnecessary SELECT.
+
+### 20.4 Unified transaction state resolution to action-based format
+
+**File:** `src/lib/services/transactions.ts` — `resolveNextTransactionState`
+
+**Before:** The function accepted two separate payload formats: a legacy non-action format (used by single-transaction updates) and an action-based format (used by bulk operations). This meant duplicate logic existed for the classify and reopen cases.
+
+**After:** The function accepts only the action-based format (`action: "classify" | "confirm-exclusion" | "reopen"`). The `updateTransaction` caller now converts its incoming payload to the action-based shape before calling `resolveNextTransactionState`, eliminating the duplicate branch.
+
+### 20.5 UUID validation for bulk operation IDs
+
+**File:** `src/lib/contracts.ts` — `bulkUpdateSchema`
+
+**Before:** The `ids` array in bulk update requests validated only that each element was a non-empty string (`z.string().min(1)`). Any non-empty string would pass validation.
+
+**After:** Each ID must be a valid UUID (`z.string().uuid()`), matching the actual format used for transaction IDs. Malformed IDs are now rejected with a 400 before reaching the database.

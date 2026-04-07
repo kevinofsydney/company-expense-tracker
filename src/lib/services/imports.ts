@@ -1,4 +1,4 @@
-import { and, between, desc, eq, inArray } from "drizzle-orm";
+import { and, between, desc, eq, inArray, or } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { ensureDb } from "@/lib/db";
 import { imports, transactions } from "@/lib/schema";
@@ -22,6 +22,10 @@ function addDays(isoDate: string, days: number) {
 async function annotateSuggestions(candidates: NormalizedTransactionCandidate[]) {
   const db = await ensureDb();
 
+  // Separate candidates that are already directly identified as transfers
+  // from those that need a DB lookup for cross-account pair matching.
+  const needsDbCheck: NormalizedTransactionCandidate[] = [];
+
   for (const candidate of candidates) {
     const directSuggestion = getDirectTransferSuggestion(candidate);
     if (directSuggestion) {
@@ -42,27 +46,61 @@ async function annotateSuggestions(candidates: NormalizedTransactionCandidate[])
       continue;
     }
 
-    const existingMatch = await db.query.transactions.findFirst({
-      where: and(
-        eq(transactions.accountType, oppositeAccountType(candidate.accountType)),
-        eq(transactions.amountCents, -candidate.amountCents),
-        between(transactions.date, addDays(candidate.date, -3), addDays(candidate.date, 3)),
-      ),
-      orderBy: [desc(transactions.date)],
-    });
+    needsDbCheck.push(candidate);
+  }
 
-    if (
-      existingMatch &&
-      isLikelyCrossAccountPair(candidate, {
-        accountType: existingMatch.accountType,
-        date: existingMatch.date,
-        amountCents: existingMatch.amountCents,
-        transactionType: existingMatch.transactionType,
-        transactionDetails: existingMatch.transactionDetails,
-        merchantName: existingMatch.merchantName,
-        nabCategory: existingMatch.nabCategory,
-      })
-    ) {
+  if (needsDbCheck.length === 0) {
+    return candidates;
+  }
+
+  // Single query: fetch all existing transactions within the widest date window
+  // that could match any candidate, then match in-memory.
+  const minDate = needsDbCheck.reduce(
+    (min, c) => (c.date < min ? c.date : min),
+    needsDbCheck[0].date,
+  );
+  const maxDate = needsDbCheck.reduce(
+    (max, c) => (c.date > max ? c.date : max),
+    needsDbCheck[0].date,
+  );
+
+  const potentialMatches = await db
+    .select({
+      id: transactions.id,
+      accountType: transactions.accountType,
+      date: transactions.date,
+      amountCents: transactions.amountCents,
+      transactionType: transactions.transactionType,
+      transactionDetails: transactions.transactionDetails,
+      merchantName: transactions.merchantName,
+      nabCategory: transactions.nabCategory,
+    })
+    .from(transactions)
+    .where(
+      and(
+        or(
+          ...needsDbCheck.map((c) =>
+            eq(transactions.accountType, oppositeAccountType(c.accountType)),
+          ),
+        ),
+        between(transactions.date, addDays(minDate, -3), addDays(maxDate, 3)),
+      ),
+    );
+
+  for (const candidate of needsDbCheck) {
+    const existingMatch = potentialMatches.find(
+      (existing) =>
+        existing.accountType === oppositeAccountType(candidate.accountType) &&
+        existing.amountCents === -candidate.amountCents &&
+        Math.abs(
+          new Date(`${existing.date}T00:00:00Z`).getTime() -
+            new Date(`${candidate.date}T00:00:00Z`).getTime(),
+        ) <=
+          3 * 24 * 60 * 60 * 1000 &&
+        isLikelyCrossAccountPair(candidate, existing),
+    );
+
+    if (existingMatch) {
       candidate.reviewStatus = "SUGGESTED_EXCLUSION";
       candidate.exclusionReason =
         "Likely cross-account internal transfer pair matched against existing data.";
@@ -100,7 +138,11 @@ export async function importTransactionsFromCsv(args: {
   const importId = randomUUID();
   const uploadedAt = new Date().toISOString();
 
-  await db.insert(imports).values({
+  const suggestedExclusionRows = rowsToInsert.filter(
+    (row) => row.reviewStatus === "SUGGESTED_EXCLUSION",
+  ).length;
+
+  const importRecord = {
     id: importId,
     filename: args.filename,
     accountType: args.accountType,
@@ -109,10 +151,10 @@ export async function importTransactionsFromCsv(args: {
     addedRows: rowsToInsert.length,
     duplicateRows: candidates.length - rowsToInsert.length,
     skippedRows: parsed.skippedRows.length,
-    suggestedExclusionRows: rowsToInsert.filter(
-      (row) => row.reviewStatus === "SUGGESTED_EXCLUSION",
-    ).length,
-  });
+    suggestedExclusionRows,
+  };
+
+  await db.insert(imports).values(importRecord);
 
   if (rowsToInsert.length > 0) {
     const now = new Date().toISOString();
@@ -137,14 +179,6 @@ export async function importTransactionsFromCsv(args: {
         updatedAt: now,
       })),
     );
-  }
-
-  const importRecord = await db.query.imports.findFirst({
-    where: eq(imports.id, importId),
-  });
-
-  if (!importRecord) {
-    throw new Error("Import record was not created.");
   }
 
   return {
