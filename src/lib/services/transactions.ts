@@ -162,15 +162,6 @@ function resolveNextTransactionState(
   },
   payload:
     | {
-        classification: Classification;
-        exclusionReason?: string | null;
-      }
-    | {
-        classification: null;
-        reviewStatus: "UNREVIEWED";
-        exclusionReason?: string | null;
-      }
-    | {
         action: "classify";
         classification: Classification;
         exclusionReason?: string | null;
@@ -183,46 +174,28 @@ function resolveNextTransactionState(
         action: "reopen";
       },
 ) {
-  if ("action" in payload) {
-    if (payload.action === "classify") {
-      assertClassificationAllowed(row.amountCents, payload.classification);
-      return {
-        classification: payload.classification,
-        reviewStatus: deriveReviewStatus(payload.classification),
-        exclusionReason:
-          payload.classification === "EXCLUDED" ? payload.exclusionReason ?? null : null,
-      };
-    }
-
-    if (payload.action === "confirm-exclusion") {
-      return {
-        classification: "EXCLUDED" as const,
-        reviewStatus: "CONFIRMED_EXCLUSION" as const,
-        exclusionReason: payload.exclusionReason ?? row.exclusionReason ?? null,
-      };
-    }
-
+  if (payload.action === "classify") {
+    assertClassificationAllowed(row.amountCents, payload.classification);
     return {
-      classification: null,
-      reviewStatus: "UNREVIEWED" as const,
-      exclusionReason: null,
+      classification: payload.classification,
+      reviewStatus: deriveReviewStatus(payload.classification),
+      exclusionReason:
+        payload.classification === "EXCLUDED" ? payload.exclusionReason ?? null : null,
     };
   }
 
-  if (payload.classification === null) {
+  if (payload.action === "confirm-exclusion") {
     return {
-      classification: null,
-      reviewStatus: "UNREVIEWED" as const,
-      exclusionReason: null,
+      classification: "EXCLUDED" as const,
+      reviewStatus: "CONFIRMED_EXCLUSION" as const,
+      exclusionReason: payload.exclusionReason ?? row.exclusionReason ?? null,
     };
   }
 
-  assertClassificationAllowed(row.amountCents, payload.classification);
   return {
-    classification: payload.classification,
-    reviewStatus: deriveReviewStatus(payload.classification),
-    exclusionReason:
-      payload.classification === "EXCLUDED" ? payload.exclusionReason ?? null : null,
+    classification: null,
+    reviewStatus: "UNREVIEWED" as const,
+    exclusionReason: null,
   };
 }
 
@@ -323,7 +296,6 @@ export async function updateTransaction(
     | {
         classification: null;
         reviewStatus: "UNREVIEWED";
-        exclusionReason?: string | null;
       },
 ) {
   const db = await ensureDb();
@@ -335,7 +307,12 @@ export async function updateTransaction(
     throw new Error("Transaction not found.");
   }
 
-  const nextState = resolveNextTransactionState(transaction, payload);
+  const nextState = resolveNextTransactionState(
+    transaction,
+    payload.classification === null
+      ? { action: "reopen" }
+      : { action: "classify", classification: payload.classification, exclusionReason: payload.exclusionReason },
+  );
 
   if (
     nextState.classification === transaction.classification &&
@@ -431,16 +408,19 @@ export async function bulkUpdateTransactions(payload:
     ),
   }));
 
+  // Group by identical next state to issue one UPDATE per group instead of one per row.
+  type NextState = (typeof updates)[number]["nextState"];
+  const stateKey = (s: NextState) =>
+    `${s.classification ?? ""}|${s.reviewStatus}|${s.exclusionReason ?? ""}`;
+  const groups = new Map<string, { nextState: NextState; ids: string[] }>();
   for (const { row, nextState } of updates) {
-    await db
-      .update(transactions)
-      .set({
-        classification: nextState.classification,
-        reviewStatus: nextState.reviewStatus,
-        exclusionReason: nextState.exclusionReason,
-        updatedAt: now,
-      })
-      .where(eq(transactions.id, row.id));
+    const key = stateKey(nextState);
+    let group = groups.get(key);
+    if (!group) {
+      group = { nextState, ids: [] };
+      groups.set(key, group);
+    }
+    group.ids.push(row.id);
 
     auditEntries.push({
       transactionId: row.id,
@@ -456,6 +436,18 @@ export async function bulkUpdateTransactions(payload:
         exclusionReason: nextState.exclusionReason,
       }),
     });
+  }
+
+  for (const { nextState, ids } of groups.values()) {
+    await db
+      .update(transactions)
+      .set({
+        classification: nextState.classification,
+        reviewStatus: nextState.reviewStatus,
+        exclusionReason: nextState.exclusionReason,
+        updatedAt: now,
+      })
+      .where(inArray(transactions.id, ids));
   }
 
   await writeAuditEntries(auditEntries);
