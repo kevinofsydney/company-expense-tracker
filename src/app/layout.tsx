@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Courant Profit Tracker",
-  description: "Private profit tracking for Courant Pty Ltd.",
+  title: "Courant Transaction Tracker",
+  description: "Private transaction tracking for Courant Pty Ltd.",
 };
 
 export default function RootLayout({

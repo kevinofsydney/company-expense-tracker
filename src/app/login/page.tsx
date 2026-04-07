@@ -19,7 +19,7 @@ export default async function LoginPage(props: {
           Courant Pty Ltd
         </p>
         <h1 className="mt-3 text-4xl font-semibold tracking-tight">
-          Profit tracker login
+          Transaction tracker login
         </h1>
         <p className="mt-4 text-sm leading-7 text-[var(--muted)]">
           One admin password unlocks the import workflow, review queue, audit trail,

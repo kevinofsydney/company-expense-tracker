@@ -10,7 +10,7 @@ type CalculationTransaction = {
   reviewStatus: ReviewStatus;
 };
 
-function divideAndRound(numerator: number, denominator: number) {
+export function divideAndRound(numerator: number, denominator: number) {
   const sign = numerator < 0 ? -1 : 1;
   const absolute = Math.abs(numerator);
   const quotient = Math.trunc(absolute / denominator);

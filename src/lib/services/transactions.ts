@@ -22,6 +22,8 @@ export type ParsedTransactionFilters = {
   sign?: "positive" | "negative";
   classification?: Classification | "UNCLASSIFIED";
   reviewStatus?: "UNREVIEWED" | "REVIEWED" | "SUGGESTED_EXCLUSION" | "CONFIRMED_EXCLUSION";
+  year?: string;
+  month?: string;
   startDate?: string;
   endDate?: string;
   suggestedOnly?: boolean;
@@ -96,7 +98,30 @@ function buildTransactionWhere(filters: ParsedTransactionFilters, openOnly: bool
     conditions.push(sql`${transactions.date} <= ${filters.endDate}`);
   }
 
+  if (filters.year) {
+    conditions.push(sql`substr(${transactions.date}, 1, 4) = ${filters.year}`);
+  }
+
+  if (filters.month) {
+    conditions.push(sql`substr(${transactions.date}, 6, 2) = ${filters.month}`);
+  }
+
   return conditions.length > 0 ? and(...conditions) : undefined;
+}
+
+export async function listTransactionDateFacets() {
+  const db = await ensureDb();
+  const rows = await db
+    .select({
+      year: sql<string>`substr(${transactions.date}, 1, 4)`,
+    })
+    .from(transactions)
+    .groupBy(sql`substr(${transactions.date}, 1, 4)`)
+    .orderBy(desc(sql`substr(${transactions.date}, 1, 4)`));
+
+  return {
+    years: rows.map((row) => row.year).filter(Boolean),
+  };
 }
 
 async function writeAuditEntries(

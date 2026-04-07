@@ -21,6 +21,23 @@ export type Classification = (typeof CLASSIFICATIONS)[number];
 export type ReviewStatus = (typeof REVIEW_STATUSES)[number];
 export type AccountType = (typeof ACCOUNT_TYPES)[number];
 
+export const CLASSIFICATION_LABELS: Record<Classification, string> = {
+  INCOME: "Income",
+  BUSINESS: "Business expense",
+  KEVIN: "Kevin",
+  DAVID: "David",
+  WENONA: "Wenona",
+  KEVIN_WENONA: "Kevin and Wenona",
+  EXCLUDED: "Excluded",
+};
+
+export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
+  UNREVIEWED: "Unreviewed",
+  REVIEWED: "Reviewed",
+  SUGGESTED_EXCLUSION: "Suggested exclusion",
+  CONFIRMED_EXCLUSION: "Confirmed exclusion",
+};
+
 export const POSITIVE_ALLOWED_CLASSIFICATIONS = new Set<Classification>([
   "INCOME",
   "EXCLUDED",
