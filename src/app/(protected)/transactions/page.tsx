@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { TransactionFiltersForm } from "@/components/transaction-filters-form";
 import { TransactionTable } from "@/components/transaction-table";
+import { PersonBalanceChart } from "@/components/person-balance-chart";
 import { divideAndRound } from "@/lib/domain/calculations";
 import {
   transactionFiltersSchema,
@@ -11,6 +12,7 @@ import {
   listTransactionDateFacets,
   normalizeTransactionFilters,
 } from "@/lib/services/transactions";
+import { getPersonBalanceHistory } from "@/lib/services/dashboard";
 
 export const dynamic = "force-dynamic";
 
@@ -59,12 +61,13 @@ export default async function TransactionsPage(props: {
   const filters = normalizeTransactionFilters(
     parsed.success ? parsed.data : ({} satisfies TransactionFiltersInput),
   );
-  const [rowsResult, dateFacets] = await Promise.all([
+  const [rowsResult, dateFacets, balanceHistory] = await Promise.all([
     listTransactions({
       filters: { ...filters, page: 1, pageSize: 5000 },
       openOnly: false,
     }),
     listTransactionDateFacets(),
+    personView ? getPersonBalanceHistory(personView) : Promise.resolve(null),
   ]);
   const rows = rowsResult.rows;
   const personRows = personView
@@ -116,6 +119,20 @@ export default async function TransactionsPage(props: {
 
   return (
     <div className="grid gap-6">
+      {personView && balanceHistory && balanceHistory.length >= 2 && (
+        <section className="panel p-6">
+          <p className="text-sm uppercase tracking-[0.18em] text-[var(--muted)]">
+            Profit share over time
+          </p>
+          <h2 className={`mt-2 text-2xl font-semibold ${PERSON_VIEW_COPY[personView].colorClass}`}>
+            {PERSON_VIEW_COPY[personView].title.split(" ")[0]} balance by quarter
+          </h2>
+          <div className="mt-5">
+            <PersonBalanceChart points={balanceHistory} personView={personView} />
+          </div>
+        </section>
+      )}
+
       <section className="panel p-6">
         <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
           <div>
