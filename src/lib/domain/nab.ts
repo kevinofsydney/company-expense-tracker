@@ -123,24 +123,20 @@ export function parseAmountToCents(value: string) {
 function buildDedupHash(input: {
   date: string;
   amountCents: number;
-  accountType: AccountType;
   transactionType: string | null;
   transactionDetails: string;
   merchantName: string | null;
   processedOn: string | null;
-  balance: string | null;
 }) {
   return createHash("sha256")
     .update(
       JSON.stringify({
         date: input.date,
         amountCents: input.amountCents,
-        accountType: input.accountType,
         transactionType: normalizeForHash(input.transactionType),
         transactionDetails: normalizeForHash(input.transactionDetails),
         merchantName: normalizeForHash(input.merchantName),
         processedOn: input.processedOn ?? "",
-        balance: normalizeForHash(input.balance),
       }),
     )
     .digest("hex");
@@ -238,12 +234,10 @@ export function parseNabCsv(args: {
         dedupHash: buildDedupHash({
           date,
           amountCents,
-          accountType: args.accountType,
           transactionType,
           transactionDetails,
           merchantName,
           processedOn,
-          balance,
         }),
         rawRowJson: JSON.stringify({
           rowNumber,
