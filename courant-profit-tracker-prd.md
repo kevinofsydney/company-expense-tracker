@@ -334,15 +334,14 @@ Kevin must be able to:
 ### Rounding
 All profit-share division uses half-round-up rounding (round half away from zero). This avoids systematic cent bias when dividing odd amounts.
 
-### Provisional totals rule
-A transaction is considered pending review if any of the following are true:
-- its review status is `UNREVIEWED`
-- its review status is `SUGGESTED_EXCLUSION`
-- its amount is positive and classification is null
+### Current bank balance rule
+The dashboard must show a current bank balance widget.
 
-If any pending review transactions exist, the dashboard must clearly show:
-- `Provisional totals`
-- count of items pending review
+Source of truth:
+- prefer the latest imported `debit` transaction row with a usable source `Balance` value
+- if no debit row exists, fall back to the latest imported row with a usable source `Balance` value
+
+The balance may be derived from the stored raw source row payload if no dedicated balance column exists in the transaction schema.
 
 ### Dashboard widgets
 The dashboard must show:
@@ -352,8 +351,16 @@ The dashboard must show:
 - Kevin Balance
 - David Balance
 - Wenona Balance
-- Pending Review count
+- Current Bank Balance
 - Suggested Exclusions count
+
+### Dashboard transaction preview
+The dashboard should show a recent-transactions preview beneath the summary cards.
+
+The user must be able to choose how many recent rows to show on the dashboard:
+- 25
+- 50
+- 100
 
 ## 11.6 Review queue (P0)
 
@@ -384,21 +391,52 @@ Kevin must be able to:
 - confirm exclusions in bulk
 - move selected rows back to review
 
+### Configurable import classification rules
+The app must provide a settings surface for import-time classification rules.
+
+The user must be able to:
+- create a text or wildcard match rule
+- assign a classification to the rule
+- delete a rule
+
+Rule behavior:
+- matching is case-insensitive
+- plain text rules use substring matching
+- `*` acts as a wildcard
+- matching rules auto-apply classification during import
+- auto-applied classifications must remain reviewable after import
+
 ## 11.7 All transactions view (P0)
 
 The app must provide a complete transaction archive.
 
 ### Capabilities
-- paginated table
+- table view of all loaded transactions
 - filter by classification
 - filter by review status
 - filter by source account
 - filter by date range
+- filter by year
+- filter by month
 - inline edits
 - open a transaction detail drawer or modal
 - view raw import source data
 - view import source file reference
 - view audit trail entries for the row
+- sort by date from the column header
+- sort by amount from the column header
+- quick-cycle status filtering from the status header
+
+### Person-specific transaction views
+The archive must support direct drill-down views for:
+- Kevin
+- David
+- Wenona
+
+In these views:
+- Kevin rows include `KEVIN` plus shared `KEVIN_WENONA` rows at 50% of the original amount
+- Wenona rows include `WENONA` plus shared `KEVIN_WENONA` rows at 50% of the original amount
+- David rows include `DAVID` rows only
 
 ## 11.8 Export (P1)
 
@@ -412,16 +450,24 @@ The app should support CSV export of all transactions with:
 - import id
 - timestamps
 
+## 11.8.1 Import recovery / destructive reset
+
+The app must provide a destructive reset flow for imported data.
+
+The user must be able to delete:
+- all transactions
+- all import records
+- all audit log entries
+
+Safety requirements:
+- the reset action must live in a clearly marked danger zone
+- the user must type `delete` exactly before the action is enabled
+
 ## 11.9 Keyword rules (P1)
 
-Keyword-based suggestion rules are out of P0 scope but may be added in P1.
+Keyword-based import rules are now part of the implemented product and are no longer speculative P1 behavior.
 
-If implemented, Kevin should be able to:
-- create keyword-based suggestions
-- auto-suggest a classification for matching future rows
-- review suggestions before final application
-
-The system must not silently apply destructive rules without review in V1.
+See section 11.6 for required settings and import behavior.
 
 ## 11.10 Session and authentication details
 
@@ -523,6 +569,7 @@ This is not a hard contract, but the implementation should expose endpoints equi
 - `POST /api/import`
 - `GET /api/imports`
 - `GET /api/imports/:id`
+- `POST /api/imports/reset`
 
 ### Transactions
 - `GET /api/transactions` — paginated list with filters
@@ -534,6 +581,11 @@ This is not a hard contract, but the implementation should expose endpoints equi
 ### Dashboard
 - `GET /api/dashboard`
 
+### Settings
+- `GET /api/settings/classification-rules`
+- `POST /api/settings/classification-rules`
+- `DELETE /api/settings/classification-rules/:id`
+
 ### Health
 - `GET /api/health` — liveness check for deployment health monitors
 
@@ -544,9 +596,9 @@ This is not a hard contract, but the implementation should expose endpoints equi
 
 ### Dashboard
 - summary cards at the top
-- pending review badge
 - suggested exclusions badge
-- clear indication when totals are provisional
+- current bank balance widget
+- recent transaction preview with selectable dashboard limit
 - direct links into filtered queues
 
 ### Upload experience
@@ -572,6 +624,9 @@ This is not a hard contract, but the implementation should expose endpoints equi
 ### Archive
 - filters persist in URL where practical
 - easy to move from a dashboard total to the underlying rows
+- sortable date and amount columns
+- quick status filtering from the status header
+- year and month filters
 
 ## 16. Acceptance criteria
 
@@ -606,16 +661,22 @@ This is not a hard contract, but the implementation should expose endpoints equi
 20. A negative WENONA transaction reduces Wenona’s balance only.
 21. A negative KEVIN_WENONA transaction reduces Kevin and Wenona equally.
 22. A positive refund or transfer does not affect Income unless Kevin explicitly classifies it as INCOME.
-23. The dashboard shows `Provisional totals` while unresolved review items remain open.
+23. The dashboard shows the current bank balance using the latest imported balance-bearing transaction.
+24. The dashboard supports recent-transaction preview limits of 25, 50, or 100 rows.
 
 ### Security
-24. Unauthenticated requests to app routes redirect to `/login`.
-25. Unauthenticated API requests fail.
-26. Logging out invalidates the session.
+25. Unauthenticated requests to app routes redirect to `/login`.
+26. Unauthenticated API requests fail.
+27. Logging out invalidates the session.
 
 ### Audit
-27. Every classification change writes an audit log entry.
-28. Every exclusion confirmation writes an audit log entry.
+28. Every classification change writes an audit log entry.
+29. Every exclusion confirmation writes an audit log entry.
+
+### Settings and recovery
+30. Import-time classification rules can be created and deleted from the settings UI.
+31. Matching rules auto-apply classification during import.
+32. The danger-zone reset requires typing `delete` before deleting all imported data.
 
 ## 17. Suggested implementation constraints for Codex
 
