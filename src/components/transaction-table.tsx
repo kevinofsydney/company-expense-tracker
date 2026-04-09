@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   CLASSIFICATIONS,
@@ -55,6 +55,23 @@ type RenderItem =
   | { kind: "year"; key: string; year: number }
   | { kind: "quarter"; key: string; year: number; quarter: number };
 
+type SortKey = "date" | "amount";
+type SortDirection = "asc" | "desc";
+type QuickStatusFilter =
+  | "ALL"
+  | "UNREVIEWED"
+  | "SUGGESTED_EXCLUSION"
+  | "REVIEWED"
+  | "CONFIRMED_EXCLUSION";
+
+const QUICK_STATUS_FILTER_SEQUENCE: QuickStatusFilter[] = [
+  "ALL",
+  "UNREVIEWED",
+  "SUGGESTED_EXCLUSION",
+  "REVIEWED",
+  "CONFIRMED_EXCLUSION",
+];
+
 function allowedClassifications(amountCents: number): Classification[] {
   return amountCents > 0
     ? ["INCOME", "EXCLUDED"]
@@ -73,7 +90,11 @@ function getQuarter(monthIndex: number) {
   return Math.floor(monthIndex / 3) + 1;
 }
 
-function buildRenderItems(rows: TransactionRow[]): RenderItem[] {
+function buildRenderItems(rows: TransactionRow[], sortKey: SortKey): RenderItem[] {
+  if (sortKey !== "date") {
+    return rows.map((row) => ({ kind: "row", row }));
+  }
+
   const items: RenderItem[] = [];
   let previousYear: number | null = null;
   let previousQuarterKey: string | null = null;
@@ -111,10 +132,48 @@ export function TransactionTable({ mode, rows }: TransactionTableProps) {
   const [drawerRow, setDrawerRow] = useState<TransactionRow | null>(null);
   const [drawerAudit, setDrawerAudit] = useState<AuditEntry[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const renderItems = useMemo(() => buildRenderItems(rows), [rows]);
+  const [sortKey, setSortKey] = useState<SortKey>("date");
+  const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
+  const [quickStatusFilter, setQuickStatusFilter] = useState<QuickStatusFilter>("ALL");
+  const filteredRows = useMemo(() => {
+    if (quickStatusFilter === "ALL") {
+      return rows;
+    }
+
+    return rows.filter((row) => row.reviewStatus === quickStatusFilter);
+  }, [quickStatusFilter, rows]);
+  const sortedRows = useMemo(() => {
+    const next = [...filteredRows];
+    next.sort((left, right) => {
+      if (sortKey === "amount") {
+        const leftAmount = left.displayAmountCents ?? left.amountCents;
+        const rightAmount = right.displayAmountCents ?? right.amountCents;
+        return sortDirection === "asc" ? leftAmount - rightAmount : rightAmount - leftAmount;
+      }
+
+      const dateCompare = left.date.localeCompare(right.date);
+      if (dateCompare !== 0) {
+        return sortDirection === "asc" ? dateCompare : -dateCompare;
+      }
+
+      const createdCompare = left.createdAt.localeCompare(right.createdAt);
+      if (createdCompare !== 0) {
+        return sortDirection === "asc" ? createdCompare : -createdCompare;
+      }
+
+      return sortDirection === "asc"
+        ? left.id.localeCompare(right.id)
+        : right.id.localeCompare(left.id);
+    });
+    return next;
+  }, [filteredRows, sortDirection, sortKey]);
+  const renderItems = useMemo(
+    () => buildRenderItems(sortedRows, sortKey),
+    [sortedRows, sortKey],
+  );
   const selectedRows = useMemo(
-    () => rows.filter((row) => selectedIds.includes(row.id)),
-    [rows, selectedIds],
+    () => sortedRows.filter((row) => selectedIds.includes(row.id)),
+    [sortedRows, selectedIds],
   );
   const selectedPositiveCount = useMemo(
     () => selectedRows.filter((row) => row.amountCents > 0).length,
@@ -149,11 +208,49 @@ export function TransactionTable({ mode, rows }: TransactionTableProps) {
   }
 
   function selectAllVisible() {
-    setSelectedIds(rows.map((row) => row.id));
+    setSelectedIds(sortedRows.map((row) => row.id));
   }
 
   function clearSelection() {
     setSelectedIds([]);
+  }
+
+  useEffect(() => {
+    setSelectedIds((current) => current.filter((id) => sortedRows.some((row) => row.id === id)));
+  }, [sortedRows]);
+
+  function toggleSort(nextSortKey: SortKey) {
+    if (sortKey === nextSortKey) {
+      setSortDirection((current) => (current === "desc" ? "asc" : "desc"));
+      return;
+    }
+
+    setSortKey(nextSortKey);
+    setSortDirection(nextSortKey === "date" ? "desc" : "desc");
+  }
+
+  function toggleQuickStatusFilter() {
+    setQuickStatusFilter((current) => {
+      const currentIndex = QUICK_STATUS_FILTER_SEQUENCE.indexOf(current);
+      const nextIndex = (currentIndex + 1) % QUICK_STATUS_FILTER_SEQUENCE.length;
+      return QUICK_STATUS_FILTER_SEQUENCE[nextIndex]!;
+    });
+  }
+
+  function sortLabel(label: string, headerSortKey: SortKey) {
+    if (sortKey !== headerSortKey) {
+      return `${label}. Activate to sort.`;
+    }
+
+    return `${label}. Sorted ${sortDirection === "asc" ? "ascending" : "descending"}. Activate to toggle sort direction.`;
+  }
+
+  function statusFilterLabel() {
+    if (quickStatusFilter === "ALL") {
+      return "Status. Showing all statuses. Activate to cycle through status filters.";
+    }
+
+    return `Status. Filtering to ${REVIEW_STATUS_LABELS[quickStatusFilter]}. Activate to cycle through status filters.`;
   }
 
   async function refreshAfter(action: () => Promise<void>) {
@@ -395,12 +492,50 @@ export function TransactionTable({ mode, rows }: TransactionTableProps) {
           <thead>
             <tr>
               <th />
-              <th>Date</th>
+              <th>
+                <button
+                  aria-label={sortLabel("Date", "date")}
+                  className={`table-sort-button${sortKey === "date" ? " table-sort-button-active" : ""}`}
+                  onClick={() => toggleSort("date")}
+                  type="button"
+                >
+                  <span>Date</span>
+                  <span className="table-sort-indicator" aria-hidden="true">
+                    {sortKey === "date" ? (sortDirection === "desc" ? "↓" : "↑") : "↕"}
+                  </span>
+                </button>
+              </th>
               <th>Source</th>
               <th>Description</th>
               <th>Type</th>
-              <th>Amount</th>
-              <th>Status</th>
+              <th>
+                <button
+                  aria-label={sortLabel("Amount", "amount")}
+                  className={`table-sort-button${sortKey === "amount" ? " table-sort-button-active" : ""}`}
+                  onClick={() => toggleSort("amount")}
+                  type="button"
+                >
+                  <span>Amount</span>
+                  <span className="table-sort-indicator" aria-hidden="true">
+                    {sortKey === "amount" ? (sortDirection === "desc" ? "↓" : "↑") : "↕"}
+                  </span>
+                </button>
+              </th>
+              <th>
+                <button
+                  aria-label={statusFilterLabel()}
+                  className={`table-sort-button${quickStatusFilter !== "ALL" ? " table-sort-button-active" : ""}`}
+                  onClick={toggleQuickStatusFilter}
+                  type="button"
+                >
+                  <span>Status</span>
+                  <span className="table-sort-indicator" aria-hidden="true">
+                    {quickStatusFilter === "ALL"
+                      ? "All"
+                      : REVIEW_STATUS_LABELS[quickStatusFilter]}
+                  </span>
+                </button>
+              </th>
               <th>Classification</th>
               <th>Actions</th>
             </tr>
@@ -564,11 +699,27 @@ export function TransactionTable({ mode, rows }: TransactionTableProps) {
                         </button>
                       ) : null}
                       <button
-                        className="inline-action text-left"
+                        aria-label="Open transaction details"
+                        className="icon-action-button"
                         onClick={() => void openDrawer(row)}
+                        title="Details"
                         type="button"
                       >
-                        Details
+                        <svg
+                          aria-hidden="true"
+                          fill="none"
+                          height="16"
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="1.8"
+                          viewBox="0 0 24 24"
+                          width="16"
+                        >
+                          <path d="M7 10.5h10" />
+                          <path d="M7 14h6" />
+                          <path d="M6.5 5.5h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H12l-4.5 3v-3H6.5a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2Z" />
+                        </svg>
                       </button>
                     </div>
                   </td>
@@ -579,9 +730,11 @@ export function TransactionTable({ mode, rows }: TransactionTableProps) {
         </table>
       </div>
 
-      {rows.length === 0 ? (
+      {sortedRows.length === 0 ? (
         <div className="py-10 text-center text-sm text-[var(--muted)]">
-          No transactions match the current filters.
+          {quickStatusFilter === "ALL"
+            ? "No transactions match the current filters."
+            : `No transactions match the current filters and ${REVIEW_STATUS_LABELS[quickStatusFilter].toLowerCase()} status.`}
         </div>
       ) : null}
 

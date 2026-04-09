@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { parse } from "csv-parse/sync";
-import type { AccountType, ReviewStatus } from "@/lib/constants";
+import type { AccountType, Classification, ReviewStatus } from "@/lib/constants";
 
 const NAB_HEADER = [
   "Date",
@@ -58,6 +58,7 @@ export type NormalizedTransactionCandidate = {
   transactionDetails: string;
   merchantName: string | null;
   nabCategory: string | null;
+  classification: Classification | null;
   reviewStatus: ReviewStatus;
   exclusionReason: string | null;
   dedupHash: string;
@@ -127,6 +128,7 @@ function buildDedupHash(input: {
   transactionDetails: string;
   merchantName: string | null;
   processedOn: string | null;
+  balance: string | null;
 }) {
   return createHash("sha256")
     .update(
@@ -137,6 +139,7 @@ function buildDedupHash(input: {
         transactionDetails: normalizeForHash(input.transactionDetails),
         merchantName: normalizeForHash(input.merchantName),
         processedOn: input.processedOn ?? "",
+        balance: normalizeForHash(input.balance),
       }),
     )
     .digest("hex");
@@ -229,6 +232,7 @@ export function parseNabCsv(args: {
         transactionDetails,
         merchantName,
         nabCategory,
+        classification: null,
         reviewStatus: "UNREVIEWED",
         exclusionReason: null,
         dedupHash: buildDedupHash({
@@ -238,6 +242,7 @@ export function parseNabCsv(args: {
           transactionDetails,
           merchantName,
           processedOn,
+          balance,
         }),
         rawRowJson: JSON.stringify({
           rowNumber,

@@ -1,4 +1,5 @@
 import { isAuthenticated } from "@/lib/auth";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { redirect } from "next/navigation";
 
 export default async function LoginPage(props: {
@@ -14,7 +15,10 @@ export default async function LoginPage(props: {
 
   return (
     <main className="app-shell flex min-h-screen items-center justify-center px-4 py-10">
-      <section className="panel w-full max-w-lg p-8 md:p-10">
+      <section className="panel relative w-full max-w-lg p-8 md:p-10">
+        <div className="absolute right-6 top-6">
+          <ThemeToggle />
+        </div>
         <p className="text-sm uppercase tracking-[0.22em] text-[var(--muted)]">
           Courant Pty Ltd
         </p>

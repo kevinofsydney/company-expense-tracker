@@ -13,6 +13,11 @@ export const imports = sqliteTable("imports", {
   suggestedExclusionRows: integer("suggested_exclusion_rows").notNull(),
 });
 
+export const appSettings = sqliteTable("app_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+});
+
 export const transactions = sqliteTable(
   "transactions",
   {
@@ -58,5 +63,18 @@ export const auditLog = sqliteTable(
   },
   (table) => ({
     transactionIdx: index("audit_log_transaction_id_idx").on(table.transactionId),
+  }),
+);
+
+export const classificationRules = sqliteTable(
+  "classification_rules",
+  {
+    id: text("id").primaryKey(),
+    pattern: text("pattern").notNull(),
+    classification: text("classification", { enum: CLASSIFICATIONS }).notNull(),
+    createdAt: text("created_at").notNull(),
+  },
+  (table) => ({
+    createdAtIdx: index("classification_rules_created_at_idx").on(table.createdAt),
   }),
 );

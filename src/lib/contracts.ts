@@ -52,6 +52,15 @@ export const bulkUpdateSchema = z.discriminatedUnion("action", [
   }),
 ]);
 
+export const deleteAllDataSchema = z.object({
+  confirmation: z.literal("delete"),
+});
+
+export const classificationRuleCreateSchema = z.object({
+  pattern: z.string().trim().min(1).max(120),
+  classification: classificationSchema,
+});
+
 export const transactionFiltersSchema = z.object({
   search: optionalField(z.string().trim()),
   accountType: optionalField(accountTypeSchema),
@@ -70,3 +79,4 @@ export const transactionFiltersSchema = z.object({
 });
 
 export type TransactionFiltersInput = z.infer<typeof transactionFiltersSchema>;
+export type ClassificationRuleCreateInput = z.infer<typeof classificationRuleCreateSchema>;

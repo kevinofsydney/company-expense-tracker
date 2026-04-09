@@ -1,4 +1,8 @@
 export const MIGRATION_STATEMENTS = [
+  `CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT NOT NULL
+    );`,
   `CREATE TABLE IF NOT EXISTS imports (
       id TEXT PRIMARY KEY NOT NULL,
       filename TEXT NOT NULL,
@@ -39,10 +43,17 @@ export const MIGRATION_STATEMENTS = [
       created_at TEXT NOT NULL,
       FOREIGN KEY(transaction_id) REFERENCES transactions(id)
     );`,
+  `CREATE TABLE IF NOT EXISTS classification_rules (
+      id TEXT PRIMARY KEY NOT NULL,
+      pattern TEXT NOT NULL,
+      classification TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );`,
   `CREATE INDEX IF NOT EXISTS transactions_date_idx ON transactions(date);`,
   `CREATE INDEX IF NOT EXISTS transactions_review_status_idx ON transactions(review_status);`,
   `CREATE INDEX IF NOT EXISTS transactions_classification_idx ON transactions(classification);`,
   `CREATE INDEX IF NOT EXISTS transactions_account_type_idx ON transactions(account_type);`,
   `CREATE INDEX IF NOT EXISTS transactions_import_id_idx ON transactions(import_id);`,
   `CREATE INDEX IF NOT EXISTS audit_log_transaction_id_idx ON audit_log(transaction_id);`,
+  `CREATE INDEX IF NOT EXISTS classification_rules_created_at_idx ON classification_rules(created_at);`,
 ];

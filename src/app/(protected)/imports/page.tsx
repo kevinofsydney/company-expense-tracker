@@ -1,4 +1,5 @@
 import { ImportForm } from "@/components/import-form";
+import { ResetAllDataPanel } from "@/components/reset-all-data-panel";
 import { UndoImportButton } from "@/components/undo-import-button";
 import { compactNumber, formatDateLabel } from "@/lib/format";
 import { listImports } from "@/lib/services/imports";
@@ -53,6 +54,8 @@ export default async function ImportsPage() {
           </table>
         </div>
       </section>
+
+      <ResetAllDataPanel />
     </div>
   );
 }

@@ -3,11 +3,16 @@ import { randomUUID } from "node:crypto";
 import { ensureDb } from "@/lib/db";
 import { auditLog, imports, transactions } from "@/lib/schema";
 import { parseNabCsv, type NormalizedTransactionCandidate } from "@/lib/domain/nab";
+import { findMatchingClassification, type ClassificationRule } from "@/lib/domain/classification-rules";
 import {
   getDirectTransferSuggestion,
   isLikelyCrossAccountPair,
 } from "@/lib/domain/transfers";
 import type { AccountType } from "@/lib/constants";
+import { deriveReviewStatus } from "@/lib/domain/transitions";
+import { listClassificationRules } from "@/lib/services/settings";
+
+const TRANSACTION_INSERT_BATCH_SIZE = 50;
 
 function oppositeAccountType(accountType: AccountType): AccountType {
   return accountType === "credit" ? "debit" : "credit";
@@ -27,6 +32,10 @@ async function annotateSuggestions(candidates: NormalizedTransactionCandidate[])
   const needsDbCheck: NormalizedTransactionCandidate[] = [];
 
   for (const candidate of candidates) {
+    if (candidate.classification) {
+      continue;
+    }
+
     const directSuggestion = getDirectTransferSuggestion(candidate);
     if (directSuggestion) {
       candidate.reviewStatus = "SUGGESTED_EXCLUSION";
@@ -110,6 +119,24 @@ async function annotateSuggestions(candidates: NormalizedTransactionCandidate[])
   return candidates;
 }
 
+function applyClassificationRules(
+  candidates: NormalizedTransactionCandidate[],
+  rules: ClassificationRule[],
+) {
+  for (const candidate of candidates) {
+    const classification = findMatchingClassification(candidate, rules);
+    if (!classification) {
+      continue;
+    }
+
+    candidate.classification = classification;
+    candidate.reviewStatus = deriveReviewStatus(classification);
+    candidate.exclusionReason = null;
+  }
+
+  return candidates;
+}
+
 export async function importTransactionsFromCsv(args: {
   accountType: AccountType;
   csvText: string;
@@ -121,7 +148,8 @@ export async function importTransactionsFromCsv(args: {
     csvText: args.csvText,
   });
 
-  const candidates = await annotateSuggestions(parsed.rows);
+  const rules = await listClassificationRules();
+  const candidates = await annotateSuggestions(applyClassificationRules(parsed.rows, rules));
   const dedupHashes = candidates.map((candidate) => candidate.dedupHash);
   const existing = dedupHashes.length
     ? await db
@@ -131,9 +159,15 @@ export async function importTransactionsFromCsv(args: {
     : [];
 
   const existingHashes = new Set(existing.map((row) => row.dedupHash));
-  const rowsToInsert = candidates.filter(
-    (candidate) => !existingHashes.has(candidate.dedupHash),
-  );
+  const seenBatchHashes = new Set<string>();
+  const rowsToInsert = candidates.filter((candidate) => {
+    if (existingHashes.has(candidate.dedupHash) || seenBatchHashes.has(candidate.dedupHash)) {
+      return false;
+    }
+
+    seenBatchHashes.add(candidate.dedupHash);
+    return true;
+  });
 
   const importId = randomUUID();
   const uploadedAt = new Date().toISOString();
@@ -154,12 +188,12 @@ export async function importTransactionsFromCsv(args: {
     suggestedExclusionRows,
   };
 
-  await db.insert(imports).values(importRecord);
+  await db.transaction(async (tx) => {
+    await tx.insert(imports).values(importRecord);
 
-  if (rowsToInsert.length > 0) {
-    const now = new Date().toISOString();
-    await db.insert(transactions).values(
-      rowsToInsert.map((row) => ({
+    if (rowsToInsert.length > 0) {
+      const now = new Date().toISOString();
+      const transactionValues = rowsToInsert.map((row) => ({
         id: row.id,
         date: row.date,
         processedOn: row.processedOn,
@@ -169,7 +203,7 @@ export async function importTransactionsFromCsv(args: {
         transactionDetails: row.transactionDetails,
         merchantName: row.merchantName,
         nabCategory: row.nabCategory,
-        classification: null,
+        classification: row.classification,
         reviewStatus: row.reviewStatus,
         exclusionReason: row.exclusionReason,
         dedupHash: row.dedupHash,
@@ -177,9 +211,19 @@ export async function importTransactionsFromCsv(args: {
         importId,
         createdAt: now,
         updatedAt: now,
-      })),
-    );
-  }
+      }));
+
+      for (
+        let index = 0;
+        index < transactionValues.length;
+        index += TRANSACTION_INSERT_BATCH_SIZE
+      ) {
+        await tx
+          .insert(transactions)
+          .values(transactionValues.slice(index, index + TRANSACTION_INSERT_BATCH_SIZE));
+      }
+    }
+  });
 
   return {
     importRecord,
@@ -209,6 +253,13 @@ export async function deleteImport(id: string) {
   }
 
   await db.delete(imports).where(eq(imports.id, id));
+}
+
+export async function deleteAllImportedData() {
+  const db = await ensureDb();
+  await db.delete(auditLog);
+  await db.delete(transactions);
+  await db.delete(imports);
 }
 
 export async function getImportById(id: string) {

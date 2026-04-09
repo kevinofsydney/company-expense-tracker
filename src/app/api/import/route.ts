@@ -41,8 +41,15 @@ export async function POST(request: Request) {
 
     return NextResponse.json(summary);
   } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message.includes("Failed query")
+          ? "Import failed while writing transactions to the database."
+          : error.message
+        : "Import failed.";
+
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Import failed." },
+      { error: message },
       { status: 400 },
     );
   }

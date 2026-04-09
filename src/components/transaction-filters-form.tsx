@@ -203,7 +203,9 @@ export function TransactionFiltersForm({
 
   return (
     <form
-      className={mode === "archive" ? "mt-4 grid gap-4 md:grid-cols-8" : "mt-4 grid gap-4 md:grid-cols-6"}
+      className={`mt-4 grid gap-4 ${
+        mode === "archive" ? "transaction-filters-grid transaction-filters-grid-archive" : "transaction-filters-grid transaction-filters-grid-review"
+      }`}
       onSubmit={(event) => {
         event.preventDefault();
         applyFilters({
@@ -218,7 +220,7 @@ export function TransactionFiltersForm({
       }}
     >
       <input
-        className="input md:col-span-2"
+        className="input transaction-filter-search"
         name="search"
         onChange={(event) =>
           setFormState((current) => ({ ...current, search: event.target.value }))
@@ -434,7 +436,7 @@ export function TransactionFiltersForm({
       />
 
       {mode === "review" ? (
-        <label className="flex items-center gap-2 text-sm font-medium">
+        <label className="filter-checkbox transaction-filter-checkbox">
           <input
             name="suggestedOnly"
             checked={formState.suggestedOnly}
@@ -460,11 +462,15 @@ export function TransactionFiltersForm({
         </label>
       ) : null}
 
-      <div className="flex items-center gap-3">
-        <button className="button-secondary" onClick={clearFilters} type="button">
+      <div className="filter-actions transaction-filter-actions">
+        <button
+          className="button-secondary button-secondary-compact"
+          onClick={clearFilters}
+          type="button"
+        >
           Clear filters
         </button>
-        <p className="text-sm text-[var(--muted)]">
+        <p className="filter-status-text">
           {isPending ? "Updating filters..." : "Filters update automatically."}
         </p>
       </div>

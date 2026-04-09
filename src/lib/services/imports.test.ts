@@ -78,4 +78,38 @@ describe("import service", () => {
       ),
     ).toBe(true);
   });
+
+  it("applies default import classification rules automatically", async () => {
+    const debitCsv = await readFile(
+      path.join(process.cwd(), "Transactions - Courant debit.csv"),
+      "utf8",
+    );
+
+    await importTransactionsFromCsv({
+      accountType: "debit",
+      csvText: debitCsv,
+      filename: "Transactions - Courant debit.csv",
+    });
+
+    const db = await ensureDb();
+    const importedRows = await db.select().from(transactions);
+
+    expect(
+      importedRows.some(
+        (row) =>
+          row.classification === "BUSINESS" &&
+          row.reviewStatus === "REVIEWED" &&
+          row.transactionDetails.toLowerCase().includes("myob"),
+      ),
+    ).toBe(true);
+
+    expect(
+      importedRows.some(
+        (row) =>
+          row.classification === "INCOME" &&
+          row.reviewStatus === "REVIEWED" &&
+          row.transactionDetails.toLowerCase().includes("ln australa"),
+      ),
+    ).toBe(true);
+  });
 });
