@@ -1,5 +1,107 @@
 # AGENTS.md
 
+# Engineering Agent Policy
+
+This file is the shared coding policy for agentic coding tools.
+
+## Operating mode
+- First inspect the repository and detect the stack, package manager, task runner, and existing project conventions before making changes.
+- Prefer existing scripts and configuration over introducing new ones.
+- Keep changes minimal, reversible, and consistent with the current codebase.
+- Do not treat a task as complete while relevant checks are failing.
+
+## General code quality rules
+Always prefer deleting dead or slop code over preserving it.
+
+Never leave behind:
+- unused imports
+- unused variables
+- unused parameters
+- unused exports
+- unused files
+- unused dependencies
+- duplicate helpers
+- commented-out code
+- stale feature-flag branches
+- speculative “might need this later” code
+- abandoned partial refactors
+
+If a symbol is intentionally unused, keep it only when clearly necessary and follow the repo convention, such as a leading underscore where supported.
+
+Before deleting code that may be part of a public API, CLI surface, framework entrypoint, migration, plugin registration path, or external integration point, verify usage from code, configs, tests, and docs first.
+
+## Dependency installation rule
+If a required linting, formatting, typechecking, or dead-code tool is missing, install it before proceeding.
+
+Before installing anything:
+1. Inspect the repo manifests and config files.
+2. Detect and use the repo’s existing package manager or environment manager.
+3. Do not introduce a new package manager when one is already in use.
+4. Prefer adding persistent project dependencies over ad hoc one-off commands when the tool is part of the expected workflow.
+5. In the final summary, report what was installed and why.
+
+## JavaScript / TypeScript policy
+When working in a JavaScript or TypeScript repository:
+
+1. Inspect package.json, lockfiles, tsconfig files, eslint config, and any monorepo config.
+2. Detect the package manager in use, such as npm, pnpm, yarn, or bun.
+3. Ensure the required quality tools are available when relevant. Common tools include:
+   - typescript
+   - eslint
+   - @typescript-eslint/parser
+   - @typescript-eslint/eslint-plugin
+   - oxlint
+   - knip
+4. Prefer existing repo scripts. If present, run:
+   - typecheck
+   - lint
+   - knip
+   - lint:fast
+5. If scripts do not exist, run the underlying tools directly when configured.
+6. Remove dead/slop code aggressively:
+   - unused imports
+   - unused vars and params
+   - unused exports
+   - unused files
+   - unused dependencies
+7. Re-run checks until clean.
+
+Preferred tool stack:
+- TypeScript compiler for typecheck and unused locals/parameters
+- ESLint or Oxlint for linting
+- Knip for project-wide unused code and dependency detection
+
+## Python policy
+When working in a Python repository:
+
+1. Inspect pyproject.toml, requirements files, lockfiles, Makefile, and task runner config.
+2. Detect the environment manager in use, such as uv, poetry, pip, pipenv, or rye.
+3. Ensure the required quality tools are available when relevant. Common tools include:
+   - ruff
+   - vulture
+4. Prefer existing repo scripts, make targets, or task runner commands.
+5. If no wrapper commands exist, run:
+   - ruff check .
+   - ruff format --check .
+   - vulture .
+6. Fix Ruff issues when safe.
+7. Use Vulture to identify dead code, then remove dead functions, classes, variables, imports, and abandoned logic when confidence is high.
+8. Treat Vulture findings cautiously in reflection-heavy or framework-driven code, including decorators, dynamic imports, plugin registration, and implicit entrypoints.
+9. Re-run checks until clean.
+
+Preferred tool stack:
+- Ruff for linting and formatting
+- Vulture for dead-code detection
+
+## Final response requirements
+At the end of any coding task, report:
+- commands run
+- packages installed
+- files changed
+- dead code removed
+- remaining warnings or errors
+- likely false positives or areas needing human review
+
 ## Purpose
 
 This repository is for building **Courant Profit Tracker**, a private single-user web app for importing NAB debit and credit-card CSVs, deduplicating rows, reviewing/classifying transactions, flagging likely internal transfers, and calculating profit allocations for Kevin, David, and Wenona.
